@@ -46,6 +46,7 @@ $scriptNames = @(
   "setup-workspace.sh",
   "scan-quick-wins.sh",
   "fetch-issues.sh",
+  "rank-candidates.sh",
   "create-pr.sh"
 )
 
@@ -109,12 +110,23 @@ Assert-Contains $scan 'kind: "missing-test"' "scan-quick-wins.sh should emit mis
 Assert-Contains $scan 'kind: "i18n"' "scan-quick-wins.sh should emit i18n quick-wins."
 Assert-Contains $scan 'kind: "todo"' "scan-quick-wins.sh should emit todo quick-wins."
 Assert-Contains $scan "!.auto-pr" "scan-quick-wins.sh should continue excluding .auto-pr metadata."
+Assert-Contains $scan 'candidate_type: "quick-win"' "scan-quick-wins.sh should tag normalized quick-win candidates."
 
 # fetch-issues.sh invariants
 $fetch = $scriptText["fetch-issues.sh"]
 Assert-Contains $fetch "gh issue list" "fetch-issues.sh must use gh issue list."
 Assert-Contains $fetch "unique_by(.number)" "fetch-issues.sh should de-dupe issues by number."
 Assert-Contains $fetch "score:" "fetch-issues.sh should produce ranked scores."
+Assert-Contains $fetch 'candidate_type: "issue"' "fetch-issues.sh should tag issue candidates."
+
+# rank-candidates.sh invariants
+$rank = $scriptText["rank-candidates.sh"]
+Assert-Contains $rank "--issues is required" "rank-candidates.sh must require an issues input path."
+Assert-Contains $rank "--quickwins is required" "rank-candidates.sh must require a quickwins input path."
+Assert-Contains $rank "merge_probability" "rank-candidates.sh should compute merge_probability."
+Assert-Contains $rank "impact_potential" "rank-candidates.sh should compute impact_potential."
+Assert-Contains $rank "recommended_stage" "rank-candidates.sh should emit recommended_stage."
+Assert-Contains $rank "tiny-pr-first" "rank-candidates.sh should preserve the tiny-first stage."
 
 # create-pr.sh invariants
 $createPr = $scriptText["create-pr.sh"]

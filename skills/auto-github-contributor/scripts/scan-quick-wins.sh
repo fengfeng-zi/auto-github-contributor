@@ -260,6 +260,7 @@ done <<<"$TODOS"
 # --- Merge + cap ---------------------------------------------------------
 jq --arg max "$MAX" -s '
   (.[0] + .[1] + .[2] + .[3])
+  | map(. + { candidate_type: "quick-win" })
   | unique_by(.slug)
   | sort_by(.estimated_minutes, .kind)
   | .[0:($max | tonumber)]

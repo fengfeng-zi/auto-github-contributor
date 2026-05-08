@@ -1,21 +1,22 @@
 ---
 name: auto-github-contributor
-description: Interactively pick a quick-win contribution in any GitHub repo, run a TDD dev-loop, open a PR via gh, and return the PR URL. Use when the user wants Codex to auto-contribute to an open-source project end-to-end. Trigger words: auto-contribute, open a PR for me, find a good first issue, contribute to <repo>.
+description: Prefer AI-related repositories, land a small standalone PR first, then assess whether the same repo supports a larger follow-up contribution. Use when the user wants Codex to auto-contribute to an open-source project end-to-end. Trigger words: auto-contribute, open a PR for me, find a good first issue, contribute to <repo>.
 ---
 
 # auto-github-contributor for Codex
 
 This is a Codex skill. The shell scripts do the real work; your job is to orchestrate them safely, ask for missing inputs in plain chat, and stop at the required confirmation points.
 
-One command, full pipeline, any repo:
+One command, full pipeline, AI-first when possible:
 
 1. Check prerequisites (`gh`, `git`, `jq`, gh auth).
-2. Resolve the target repo (`owner/name` or GitHub URL).
+2. Resolve the target repo (`owner/name` or GitHub URL), preferring AI-related repos when the user did not specify one.
 3. Discover candidates from labeled issues and repo-scan quick wins.
-4. Present a ranked picklist with estimated time and cost.
+4. Present a ranked picklist with both tiny-PR viability and follow-up potential.
 5. Wait for explicit user confirmation before touching code.
 6. Run the TDD dev-loop until lint, typecheck, and tests pass.
 7. Push and open a PR via `gh`, then print the PR URL on its own line.
+8. After the PR is open, assess whether the same repo is a good target for a second, higher-value contribution.
 
 ## Codex-specific operating notes
 
@@ -47,7 +48,7 @@ Capture `GH_USER=...` from stdout and use it as the default fork owner.
 Priority order:
 
 1. If the invoking prompt passed `$ARGUMENTS`, normalize and use it as `TARGET_REPO`.
-2. Otherwise, ask the user directly for `owner/name` or a GitHub URL.
+2. Otherwise, ask the user directly for `owner/name` or a GitHub URL. If the user wants you to choose, bias toward AI applications, AI desktop tools, LLM CLI or agent tooling, or prompt/eval/inference/workflow infrastructure.
 3. Default `TARGET_FORK` to `GH_USER` when that is sensible. The scripts accept owner-only `TARGET_FORK` and resolve it to `GH_USER/<repo-name>`. If the user explicitly wants no fork, leave it empty and warn that pushes will go to origin.
 
 Validate with:
@@ -76,11 +77,27 @@ if [[ ! -d "$SCRATCH/.git" ]]; then
   git clone --depth 1 "https://github.com/$TARGET_REPO.git" "$SCRATCH"
 fi
 bash "$SKILL_DIR/scripts/scan-quick-wins.sh" --workdir "$SCRATCH" > /tmp/agc-quickwins.json
+
+bash "$SKILL_DIR/scripts/rank-candidates.sh" \
+  --issues /tmp/agc-issues.json \
+  --quickwins /tmp/agc-quickwins.json \
+  > /tmp/agc-candidates.json
 ```
 
 ### Step 4 - Present the picklist
 
-Render one merged markdown table for the user.
+Render one merged markdown table for the user from `/tmp/agc-candidates.json`.
+
+For each candidate, include two judgments:
+
+- `merge_probability`: how likely a clean tiny PR is to be accepted quickly
+- `impact_potential`: how promising the repo looks for a second, more meaningful contribution after the first PR
+
+Default ranking rule:
+
+1. prefer the smallest isolated change that can land cleanly
+2. break ties in favor of AI-related repos
+3. break remaining ties in favor of repos with stronger follow-up potential
 
 Cost heuristics:
 
@@ -98,6 +115,8 @@ Ask the user to pick one item explicitly. Accept:
 - `Cancel`
 
 If the user cancels, stop cleanly.
+
+When presenting the recommendation, explain whether the candidate is just a quick win or a good entry point into a deeper second contribution.
 
 ### Step 5 - Isolate the workdir
 
@@ -199,15 +218,23 @@ Print the PR URL on its own line, for example:
 PR opened: https://github.com/owner/name/pull/456
 ```
 
-### Step 11 - Wrap up
+### Step 11 - Follow-up assessment and wrap up
 
-Print a one-line recap: what was picked, the PR URL, and any stubbed checks still pending.
+After the PR is open, write a short assessment covering:
+
+- whether the repo is still worth deeper contribution
+- the best next larger change type: code, tests, docs structure, CI, config, feature work, or refactor
+- the likely blast radius
+- whether maintainer activity and repo structure make a second PR practical
+
+Then print a concise recap: what was picked, the PR URL, any stubbed checks still pending, and whether the repo is recommended for continued work.
 
 ## Flow variations
 
 - If the user supplied a repo argument in the invoking prompt, skip the repo question.
 - If the user picks `Other`, accept either `#<issue>` or a quick-win slug.
 - If discovery returns zero candidates, explain that the repo looks clean for the current heuristics and offer broader labels or a manual issue number.
+- If multiple repos are available and the user wants you to choose, prefer the one that combines AI relevance, a clean tiny first PR, and realistic room for a higher-impact follow-up.
 
 ## Stub policy
 

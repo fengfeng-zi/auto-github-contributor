@@ -76,6 +76,8 @@ jq --arg limit "$AGC_ISSUE_LIMIT" '
   # De-dupe by number; keep first occurrence.
   unique_by(.number)
   | map({
+      candidate_type: "issue",
+      kind: "issue",
       number,
       title,
       url,
