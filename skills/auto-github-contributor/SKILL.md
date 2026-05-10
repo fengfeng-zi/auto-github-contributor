@@ -1,22 +1,32 @@
 ---
 name: auto-github-contributor
-description: Prefer AI-related repositories, land a small standalone PR first, then assess whether the same repo supports a larger follow-up contribution. Use when the user wants Codex to auto-contribute to an open-source project end-to-end. Trigger words: auto-contribute, open a PR for me, find a good first issue, contribute to <repo>.
+description: Prefer AI-related repositories, land a small substantive PR first, then assess whether the same repo supports a larger follow-up contribution. Use when the user wants Codex to auto-contribute to an open-source project end-to-end. Trigger words: auto-contribute, open a PR for me, find a good first issue, contribute to <repo>.
 ---
 
 # auto-github-contributor for Codex
 
 This is a Codex skill. The shell scripts do the real work; your job is to orchestrate them safely, ask for missing inputs in plain chat, and stop at the required confirmation points.
 
-One command, full pipeline, AI-first when possible:
+One command, full pipeline, AI-first and quality-first when possible:
 
 1. Check prerequisites (`gh`, `git`, `jq`, gh auth).
 2. Resolve the target repo (`owner/name` or GitHub URL), preferring AI-related repos when the user did not specify one.
 3. Discover candidates from labeled issues and repo-scan quick wins.
-4. Present a ranked picklist with both tiny-PR viability and follow-up potential.
+4. Present a ranked picklist with merge probability, substantive signal, toy risk, and follow-up potential.
 5. Wait for explicit user confirmation before touching code.
 6. Run the TDD dev-loop until lint, typecheck, and tests pass.
 7. Push and open a PR via `gh`, then print the PR URL on its own line.
-8. After the PR is open, assess whether the same repo is a good target for a second, higher-value contribution.
+8. After the PR is open, assess whether the PR is substantive enough and whether the same repo is a good target for a second, higher-value contribution.
+
+## Contribution quality policy
+
+The workflow should optimize for credible open-source contributions, not raw PR count.
+
+- Prefer bug fixes, tests, config/CI fixes, compatibility fixes, security hardening, API behavior fixes, and small feature-enablement work with a clear test plan.
+- Treat typo-only, link-only, README wording-only, and resource-list-only changes as low-signal. They are allowed only when unusually clean, clearly useful, and not stacked repeatedly in the same repo.
+- If a repo only yields low-signal candidates, prefer finding another repo over opening another toy-looking PR.
+- Do not open multiple tiny docs/list PRs in the same repo unless a maintainer has responded positively or explicitly invited more.
+- Every recommended candidate should include a candid quality label: `substantive`, `medium-signal`, or `low-signal fallback`.
 
 ## Codex-specific operating notes
 
@@ -88,20 +98,23 @@ bash "$SKILL_DIR/scripts/rank-candidates.sh" \
 
 Render one merged markdown table for the user from `/tmp/agc-candidates.json`.
 
-For each candidate, include two judgments:
+For each candidate, include four judgments:
 
-- `merge_probability`: how likely a clean tiny PR is to be accepted quickly
+- `merge_probability`: how likely a clean small PR is to be accepted quickly
 - `impact_potential`: how promising the repo looks for a second, more meaningful contribution after the first PR
+- `signal_strength`: whether the candidate is substantive, medium-signal, or low-signal
+- `toy_risk`: whether the candidate may look like contribution-count padding
 
 Default ranking rule:
 
-1. prefer the smallest isolated change that can land cleanly
-2. break ties in favor of AI-related repos
-3. break remaining ties in favor of repos with stronger follow-up potential
+1. prefer low toy-risk candidates with real behavior, tests, CI/config, compatibility, or security impact
+2. then prefer the smallest isolated change that can land cleanly
+3. break ties in favor of AI-related repos
+4. break remaining ties in favor of repos with stronger follow-up potential
 
 Cost heuristics:
 
-- typo or tiny doc fix: about `$0.30`
+- typo, link, resource-list, or tiny doc-only fix: about `$0.30` and usually a fallback only
 - i18n or small test add: about `$1.50`
 - non-trivial missing test: about `$3`
 - TODO resolution or labeled issue: about `$5-$8`
@@ -116,7 +129,7 @@ Ask the user to pick one item explicitly. Accept:
 
 If the user cancels, stop cleanly.
 
-When presenting the recommendation, explain whether the candidate is just a quick win or a good entry point into a deeper second contribution.
+When presenting the recommendation, explain whether the candidate is substantive, medium-signal, or a low-signal fallback, and whether it is a good entry point into a deeper second contribution.
 
 ### Step 5 - Isolate the workdir
 
@@ -222,6 +235,7 @@ PR opened: https://github.com/owner/name/pull/456
 
 After the PR is open, write a short assessment covering:
 
+- whether the PR is substantive, medium-signal, or low-signal/toy-risky
 - whether the repo is still worth deeper contribution
 - the best next larger change type: code, tests, docs structure, CI, config, feature work, or refactor
 - the likely blast radius

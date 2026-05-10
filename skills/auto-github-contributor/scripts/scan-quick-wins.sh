@@ -259,9 +259,15 @@ done <<<"$TODOS"
 
 # --- Merge + cap ---------------------------------------------------------
 jq --arg max "$MAX" -s '
+  def kind_rank:
+    if .kind == "missing-test" then 0
+    elif .kind == "todo" then 1
+    elif .kind == "i18n" then 2
+    else 3
+    end;
   (.[0] + .[1] + .[2] + .[3])
   | map(. + { candidate_type: "quick-win" })
   | unique_by(.slug)
-  | sort_by(.estimated_minutes, .kind)
+  | sort_by(kind_rank, .estimated_minutes, .kind)
   | .[0:($max | tonumber)]
 ' "$TMP/typo.json" "$TMP/missing.json" "$TMP/i18n.json" "$TMP/todo.json"

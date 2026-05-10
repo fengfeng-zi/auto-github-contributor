@@ -111,6 +111,7 @@ Assert-Contains $scan 'kind: "i18n"' "scan-quick-wins.sh should emit i18n quick-
 Assert-Contains $scan 'kind: "todo"' "scan-quick-wins.sh should emit todo quick-wins."
 Assert-Contains $scan "!.auto-pr" "scan-quick-wins.sh should continue excluding .auto-pr metadata."
 Assert-Contains $scan 'candidate_type: "quick-win"' "scan-quick-wins.sh should tag normalized quick-win candidates."
+Assert-Contains $scan "kind_rank" "scan-quick-wins.sh should rank substantive quick-wins before typo fallbacks."
 
 # fetch-issues.sh invariants
 $fetch = $scriptText["fetch-issues.sh"]
@@ -125,6 +126,8 @@ Assert-Contains $rank "--issues is required" "rank-candidates.sh must require an
 Assert-Contains $rank "--quickwins is required" "rank-candidates.sh must require a quickwins input path."
 Assert-Contains $rank "merge_probability" "rank-candidates.sh should compute merge_probability."
 Assert-Contains $rank "impact_potential" "rank-candidates.sh should compute impact_potential."
+Assert-Contains $rank "signal_strength" "rank-candidates.sh should compute substantive signal strength."
+Assert-Contains $rank "toy_risk" "rank-candidates.sh should compute toy-risk metadata."
 Assert-Contains $rank "recommended_stage" "rank-candidates.sh should emit recommended_stage."
 Assert-Contains $rank "tiny-pr-first" "rank-candidates.sh should preserve the tiny-first stage."
 

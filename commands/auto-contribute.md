@@ -1,5 +1,5 @@
 ---
-description: Find a quick-win contribution in a GitHub repo and open a PR end-to-end.
+description: Find a small substantive contribution in a GitHub repo and open a PR end-to-end.
 argument-hint: "[repo-url-or-owner/name]"
 ---
 
@@ -17,7 +17,8 @@ User input (may be empty): `$ARGUMENTS`
 
 3. **Honor the interactive contract**:
    - Always run the prerequisite check first (`gh` installed + authed). If it fails, surface the install/auth hint and stop — do not try workarounds.
-   - Always present the discovered candidates (labeled issues + repo-scan quick wins) with estimated time/cost, and **wait for explicit user confirmation** before starting the dev-loop.
+   - Always present the discovered candidates (labeled issues + repo-scan quick wins) with estimated time/cost plus quality signal, and **wait for explicit user confirmation** before starting the dev-loop.
+   - Avoid toy-looking contribution patterns: typo/link/docs-only changes are fallback choices, while code, tests, config, CI, compatibility, and behavior fixes should be preferred.
    - At the end, print the PR URL on its own line so the user can click through.
 
 Begin by invoking the skill now.

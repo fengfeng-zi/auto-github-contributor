@@ -2,7 +2,8 @@
 # Merge issue and quick-win discovery output into a single ranked candidate list.
 # Emits a JSON array on stdout with normalized fields including:
 #   { candidate_type, kind, merge_probability, impact_potential,
-#     estimated_minutes, estimated_cost_usd, recommended_stage, ... }
+#     signal_strength, toy_risk, estimated_minutes, estimated_cost_usd,
+#     recommended_stage, ... }
 #
 # Usage:
 #   rank-candidates.sh --issues /tmp/agc-issues.json --quickwins /tmp/agc-quickwins.json [--max <n>]
@@ -64,13 +65,29 @@ jq -n \
 
   def issue_impact($labels):
     ($labels | map(ascii_downcase)) as $labels
-    | if ($labels | index("enhancement")) or ($labels | index("feature")) or ($labels | index("help wanted")) then "high"
-      elif ($labels | index("testing")) or ($labels | index("tests")) or ($labels | index("documentation")) or ($labels | index("docs")) then "medium"
+    | if ($labels | index("bug")) or ($labels | index("bugfix")) or ($labels | index("security")) or ($labels | index("ci")) or ($labels | index("enhancement")) or ($labels | index("feature")) or ($labels | index("help wanted")) then "high"
+      elif ($labels | index("testing")) or ($labels | index("tests")) or ($labels | index("i18n")) or ($labels | index("l10n")) or ($labels | index("translation")) then "medium"
+      elif ($labels | index("documentation")) or ($labels | index("docs")) or ($labels | index("typo")) then "low"
       else "medium"
       end;
 
+  def issue_signal($labels):
+    ($labels | map(ascii_downcase)) as $labels
+    | if ($labels | index("bug")) or ($labels | index("bugfix")) or ($labels | index("security")) or ($labels | index("ci")) or ($labels | index("testing")) or ($labels | index("tests")) then "high"
+      elif ($labels | index("enhancement")) or ($labels | index("feature")) or ($labels | index("help wanted")) or ($labels | index("i18n")) or ($labels | index("l10n")) or ($labels | index("translation")) then "medium"
+      elif ($labels | index("documentation")) or ($labels | index("docs")) or ($labels | index("typo")) then "low"
+      else "medium"
+      end;
+
+  def issue_toy_risk($labels):
+    issue_signal($labels) as $signal
+    | if $signal == "high" then "low"
+      elif $signal == "medium" then "medium"
+      else "high"
+      end;
+
   def quickwin_merge_probability($kind):
-    if $kind == "typo" then "high"
+    if $kind == "typo" then "medium"
     elif $kind == "missing-test" or $kind == "i18n" then "medium"
     else "low"
     end;
@@ -78,6 +95,18 @@ jq -n \
   def quickwin_impact($kind):
     if $kind == "todo" then "high"
     elif $kind == "missing-test" or $kind == "i18n" then "medium"
+    else "low"
+    end;
+
+  def quickwin_signal($kind):
+    if $kind == "missing-test" or $kind == "todo" then "high"
+    elif $kind == "i18n" then "medium"
+    else "low"
+    end;
+
+  def quickwin_toy_risk($kind):
+    if $kind == "typo" then "high"
+    elif $kind == "i18n" then "medium"
     else "low"
     end;
 
@@ -92,12 +121,16 @@ jq -n \
     | (issue_minutes($issue.labels)) as $minutes
     | (issue_merge_probability($issue.score; $issue.labels)) as $merge_probability
     | (issue_impact($issue.labels)) as $impact_potential
+    | (issue_signal($issue.labels)) as $signal_strength
+    | (issue_toy_risk($issue.labels)) as $toy_risk
     | $issue + {
         candidate_type: "issue",
         kind: "issue",
         estimated_minutes: $minutes,
         merge_probability: $merge_probability,
         impact_potential: $impact_potential,
+        signal_strength: $signal_strength,
+        toy_risk: $toy_risk,
         follow_up_potential: $impact_potential,
         estimated_cost_usd: estimated_cost($minutes),
         recommended_stage: recommended_stage($merge_probability; $minutes)
@@ -107,10 +140,14 @@ jq -n \
     . as $quickwin
     | (quickwin_merge_probability($quickwin.kind)) as $merge_probability
     | (quickwin_impact($quickwin.kind)) as $impact_potential
+    | (quickwin_signal($quickwin.kind)) as $signal_strength
+    | (quickwin_toy_risk($quickwin.kind)) as $toy_risk
     | $quickwin + {
         candidate_type: "quick-win",
         merge_probability: $merge_probability,
         impact_potential: $impact_potential,
+        signal_strength: $signal_strength,
+        toy_risk: $toy_risk,
         follow_up_potential: $impact_potential,
         estimated_cost_usd: estimated_cost($quickwin.estimated_minutes),
         recommended_stage: recommended_stage($merge_probability; $quickwin.estimated_minutes)
@@ -120,10 +157,12 @@ jq -n \
   + (($quickwins[0] // []) | map(normalize_quickwin))
   | unique_by([.candidate_type, (.slug // (.number | tostring) // .title)])
   | sort_by(
+      rank_value(.toy_risk),
+      -rank_value(.signal_strength),
       (if .recommended_stage == "tiny-pr-first" then 0 else 1 end),
       -rank_value(.merge_probability),
-      .estimated_minutes,
       -rank_value(.impact_potential),
+      .estimated_minutes,
       .candidate_type,
       .title
     )
