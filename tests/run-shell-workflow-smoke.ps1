@@ -62,6 +62,8 @@ foreach ($name in $scriptNames) {
 $config = $scriptText["config.sh"]
 Assert-Contains $config "set -euo pipefail" "config.sh should enforce strict shell mode."
 Assert-Contains $config ': "${AGC_BASE_BRANCH:=main}"' "config.sh should default AGC_BASE_BRANCH=main."
+Assert-Contains $config "bug,bugfix,tests,testing,ci,security" "config.sh should discover substantive issue labels by default."
+Assert-True (-not $config.Contains('AGC_LABELS:=good first issue,help wanted,documentation')) "config.sh should not default to documentation-first discovery."
 Assert-Contains $config "agc::require_repo() {" "config.sh should define agc::require_repo."
 Assert-Contains $config "TARGET_REPO must be in <owner>/<name> form" "config.sh should validate TARGET_REPO format."
 Assert-Contains $config "agc::fork_repo() {" "config.sh should define fork repo helper."
@@ -112,6 +114,8 @@ Assert-Contains $scan 'kind: "todo"' "scan-quick-wins.sh should emit todo quick-
 Assert-Contains $scan "!.auto-pr" "scan-quick-wins.sh should continue excluding .auto-pr metadata."
 Assert-Contains $scan 'candidate_type: "quick-win"' "scan-quick-wins.sh should tag normalized quick-win candidates."
 Assert-Contains $scan "kind_rank" "scan-quick-wins.sh should rank substantive quick-wins before typo fallbacks."
+Assert-Contains $scan "fallback_only: true" "scan-quick-wins.sh should tag typos as fallback-only candidates."
+Assert-Contains $scan "if (`$substantive | length) > 0 then `$substantive else (`$fallbacks | .[0:2]) end" "scan-quick-wins.sh should cap typo fallbacks when no substantive quick-win exists."
 
 # fetch-issues.sh invariants
 $fetch = $scriptText["fetch-issues.sh"]
@@ -119,6 +123,8 @@ Assert-Contains $fetch "gh issue list" "fetch-issues.sh must use gh issue list."
 Assert-Contains $fetch "unique_by(.number)" "fetch-issues.sh should de-dupe issues by number."
 Assert-Contains $fetch "score:" "fetch-issues.sh should produce ranked scores."
 Assert-Contains $fetch 'candidate_type: "issue"' "fetch-issues.sh should tag issue candidates."
+Assert-Contains $fetch '. == "bug" or . == "bugfix" or . == "security" or . == "ci" then 4' "fetch-issues.sh should prioritize substantive maintenance labels."
+Assert-Contains $fetch '. == "documentation" or . == "docs" or . == "typo" then 0' "fetch-issues.sh should demote docs/typo labels during discovery."
 
 # rank-candidates.sh invariants
 $rank = $scriptText["rank-candidates.sh"]
@@ -130,6 +136,8 @@ Assert-Contains $rank "signal_strength" "rank-candidates.sh should compute subst
 Assert-Contains $rank "toy_risk" "rank-candidates.sh should compute toy-risk metadata."
 Assert-Contains $rank "recommended_stage" "rank-candidates.sh should emit recommended_stage."
 Assert-Contains $rank "tiny-pr-first" "rank-candidates.sh should preserve the tiny-first stage."
+Assert-Contains $rank 'if $toy_risk == "high" then "fallback"' "rank-candidates.sh should prevent high toy-risk candidates from tiny-pr-first."
+Assert-Contains $rank 'elif $toy_risk == "medium" then "manual-review"' "rank-candidates.sh should require manual review for medium toy-risk candidates."
 
 # create-pr.sh invariants
 $createPr = $scriptText["create-pr.sh"]
@@ -138,6 +146,53 @@ Assert-Contains $createPr "git reset --quiet -- .auto-pr" "create-pr.sh should a
 Assert-Contains $createPr "gh pr create" "create-pr.sh should open PR via gh."
 Assert-Contains $createPr "printf 'PR_URL=%s\n'" "create-pr.sh should emit PR_URL=..."
 Assert-Contains $createPr "*.stub.txt" "create-pr.sh should surface browser stub artifacts."
+
+# Ranking fixture regression checks. Run only when bash + jq are available.
+$bashCommand = Get-Command bash -ErrorAction SilentlyContinue
+$jqCommand = Get-Command jq -ErrorAction SilentlyContinue
+if ($bashCommand -and $jqCommand) {
+  $fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("agc-rank-fixture-" + [System.Guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory -Path $fixtureRoot | Out-Null
+  try {
+    $issuesPath = Join-Path $fixtureRoot "issues.json"
+    $quickwinsPath = Join-Path $fixtureRoot "quickwins.json"
+    $issuesJson = @(
+      '[',
+      '  {"number": 1, "title": "Fix auth bug", "url": "https://example.test/1", "labels": ["bug"], "score": 4, "updatedAt": "2026-05-10T00:00:00Z", "body": "Real behavior bug."},',
+      '  {"number": 2, "title": "Fix README typo", "url": "https://example.test/2", "labels": ["typo"], "score": 9, "updatedAt": "2026-05-10T00:00:00Z", "body": "Typo only."}',
+      ']'
+    ) -join "`n"
+    $quickwinsJson = @(
+      '[',
+      '  {"kind": "typo", "title": "Typo fallback", "summary": "Fix typo.", "file": "README.md", "line": 1, "estimated_minutes": 5, "slug": "typo-readme"},',
+      '  {"kind": "missing-test", "title": "Add missing test", "summary": "Cover module.", "file": "src/client.ts", "line": 1, "estimated_minutes": 30, "slug": "missing-test-client"}',
+      ']'
+    ) -join "`n"
+    Set-Content -LiteralPath $issuesPath -Value $issuesJson -Encoding UTF8
+    Set-Content -LiteralPath $quickwinsPath -Value $quickwinsJson -Encoding UTF8
+
+    $rankScript = (Join-Path $scriptsRoot "rank-candidates.sh").Replace("\", "/")
+    $issuesArg = $issuesPath.Replace("\", "/")
+    $quickwinsArg = $quickwinsPath.Replace("\", "/")
+    $rankOutput = & $bashCommand.Source $rankScript --issues $issuesArg --quickwins $quickwinsArg --max 4
+    if ($LASTEXITCODE -ne 0) {
+      $script:failures.Add("rank-candidates.sh fixture run failed with exit code $LASTEXITCODE.")
+    } else {
+      $ranked = $rankOutput | ConvertFrom-Json
+      Assert-True ($ranked[0].title -eq "Add missing test" -or $ranked[0].title -eq "Fix auth bug") "Ranking fixture should put substantive bug/test candidates before typo fallbacks."
+      $typoIssue = $ranked | Where-Object { $_.title -eq "Fix README typo" } | Select-Object -First 1
+      Assert-True ($null -ne $typoIssue) "Ranking fixture should include the typo issue for fallback review."
+      Assert-True ($typoIssue.recommended_stage -eq "fallback") "Ranking fixture should mark typo issue as fallback, not tiny-pr-first."
+      $typoQuickWin = $ranked | Where-Object { $_.title -eq "Typo fallback" } | Select-Object -First 1
+      Assert-True ($null -ne $typoQuickWin) "Ranking fixture should include the typo quick-win for fallback review."
+      Assert-True ($typoQuickWin.recommended_stage -eq "fallback") "Ranking fixture should mark typo quick-win as fallback, not tiny-pr-first."
+    }
+  } finally {
+    Remove-Item -LiteralPath $fixtureRoot -Recurse -Force -ErrorAction SilentlyContinue
+  }
+} else {
+  $warnings.Add("Skipped runtime ranking fixture; bash and jq are required.")
+}
 
 # PR body template invariants
 $prBodyTemplatePath = Join-Path $repoRoot "skills/auto-github-contributor/templates/PR-BODY.template.md"

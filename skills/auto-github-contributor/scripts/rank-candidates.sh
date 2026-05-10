@@ -57,7 +57,8 @@ jq -n \
 
   def issue_merge_probability($score; $labels):
     ($labels | map(ascii_downcase)) as $labels
-    | if $score >= 7 then "high"
+    | if ($labels | index("documentation")) or ($labels | index("docs")) or ($labels | index("typo")) then "low"
+      elif $score >= 7 then "high"
       elif $score >= 5 then "medium"
       elif ($labels | index("good first issue")) or ($labels | index("good-first-issue")) then "medium"
       else "low"
@@ -110,9 +111,11 @@ jq -n \
     else "low"
     end;
 
-  def recommended_stage($merge_probability; $estimated_minutes):
-    if $merge_probability == "high" and $estimated_minutes <= 30 then "tiny-pr-first"
-    elif $merge_probability == "medium" and $estimated_minutes <= 45 then "tiny-pr-first"
+  def recommended_stage($merge_probability; $estimated_minutes; $signal_strength; $toy_risk):
+    if $toy_risk == "high" then "fallback"
+    elif $toy_risk == "medium" then "manual-review"
+    elif $merge_probability == "high" and $estimated_minutes <= 30 then "tiny-pr-first"
+    elif $merge_probability == "medium" and $estimated_minutes <= 45 and $signal_strength == "high" then "tiny-pr-first"
     else "follow-up"
     end;
 
@@ -133,7 +136,7 @@ jq -n \
         toy_risk: $toy_risk,
         follow_up_potential: $impact_potential,
         estimated_cost_usd: estimated_cost($minutes),
-        recommended_stage: recommended_stage($merge_probability; $minutes)
+        recommended_stage: recommended_stage($merge_probability; $minutes; $signal_strength; $toy_risk)
       };
 
   def normalize_quickwin:
@@ -150,7 +153,7 @@ jq -n \
         toy_risk: $toy_risk,
         follow_up_potential: $impact_potential,
         estimated_cost_usd: estimated_cost($quickwin.estimated_minutes),
-        recommended_stage: recommended_stage($merge_probability; $quickwin.estimated_minutes)
+        recommended_stage: recommended_stage($merge_probability; $quickwin.estimated_minutes; $signal_strength; $toy_risk)
       };
 
   (($issues[0] // []) | map(normalize_issue))

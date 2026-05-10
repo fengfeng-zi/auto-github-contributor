@@ -11,7 +11,7 @@
 #   AGC_BASE_BRANCH                 default: main
 #   AGC_WORK_ROOT                   default: $HOME/auto-gh-contrib-work
 #   AGC_LABELS                      comma-separated labels for issue search
-#                                   default: "good first issue,help wanted,documentation,good-first-issue"
+#                                   default: substantive beginner labels; docs/typo are opt-in fallbacks
 #   AGC_ISSUE_LIMIT                 default: 30
 
 set -euo pipefail
@@ -22,7 +22,7 @@ set -euo pipefail
 : "${AGC_BASE_BRANCH:=main}"
 : "${AGC_WORK_ROOT:="$HOME/auto-gh-contrib-work"}"
 
-: "${AGC_LABELS:=good first issue,help wanted,documentation,good-first-issue}"
+: "${AGC_LABELS:=good first issue,help wanted,bug,bugfix,tests,testing,ci,security,good-first-issue}"
 : "${AGC_ISSUE_LIMIT:=30}"
 
 # Dev-loop commands. Auto-detected per-repo when possible; these are fallbacks.

@@ -50,12 +50,12 @@ done
 jq --arg limit "$AGC_ISSUE_LIMIT" '
   def label_score(ls):
     (ls | map(ascii_downcase) | map(
-      if . == "good first issue" or . == "good-first-issue" then 3
+      if . == "bug" or . == "bugfix" or . == "security" or . == "ci" then 4
+      elif . == "good first issue" or . == "good-first-issue" then 3
+      elif . == "testing" or . == "tests" then 3
       elif . == "help wanted" or . == "help-wanted" then 2
-      elif . == "documentation" or . == "docs" then 2
-      elif . == "typo" then 3
       elif . == "i18n" or . == "l10n" or . == "translation" then 2
-      elif . == "testing" or . == "tests" then 2
+      elif . == "documentation" or . == "docs" or . == "typo" then 0
       else 1 end
     ) | max // 0);
 

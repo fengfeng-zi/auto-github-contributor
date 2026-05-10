@@ -265,7 +265,9 @@ jq --arg max "$MAX" -s '
     elif .kind == "i18n" then 2
     else 3
     end;
-  (.[0] + .[1] + .[2] + .[3])
+  (.[0] | map(. + { fallback_only: true })) as $fallbacks
+  | ((.[1] + .[2] + .[3]) | map(. + { fallback_only: false })) as $substantive
+  | (if ($substantive | length) > 0 then $substantive else ($fallbacks | .[0:2]) end)
   | map(. + { candidate_type: "quick-win" })
   | unique_by(.slug)
   | sort_by(kind_rank, .estimated_minutes, .kind)
